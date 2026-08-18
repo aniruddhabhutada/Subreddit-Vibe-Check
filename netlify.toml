@@ -1,12 +1,12 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  functions = "netlify/functions"
 
 [[redirects]]
-  from = "/api/reddit-proxy/*"
-  to = "https://www.reddit.com/:splat"
+  from = "/api/reddit-hot"
+  to = "/.netlify/functions/reddit-hot"
   status = 200
-  force = true
 
 [[redirects]]
   from = "/*"
