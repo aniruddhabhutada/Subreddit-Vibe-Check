@@ -16,7 +16,6 @@ async function getOAuthToken(): Promise<string | null> {
     return null;
   }
 
-  // Use cached token if valid for at least another 60 seconds
   if (cachedOAuthToken && Date.now() < cachedOAuthToken.expiresAt - 60000) {
     return cachedOAuthToken.token;
   }
@@ -29,8 +28,7 @@ async function getOAuthToken(): Promise<string | null> {
       {
         headers: {
           'Authorization': authHeader,
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': 'web:subreddit-vibe-check:v1.0.0 (by /u/vibecheckapp)'
+          'Content-Type': 'application/x-www-form-urlencoded'
         },
         timeout: 8000
       }
@@ -44,9 +42,37 @@ async function getOAuthToken(): Promise<string | null> {
       return cachedOAuthToken.token;
     }
   } catch (error) {
-    console.warn('OAuth token fetch failed, falling back to public endpoint strategy.', error);
+    console.warn('OAuth token fetch failed, falling back to public endpoint strategies.', error);
   }
 
+  return null;
+}
+
+/**
+ * Helper to fetch JSON from a URL with timeout
+ */
+async function fetchJsonWithTimeout(url: string, headers: Record<string, string> = {}, timeoutMs = 8000): Promise<RawRedditListingResponse | null> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers,
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.kind === 'Listing' && data.data && Array.isArray(data.data.children)) {
+        return data as RawRedditListingResponse;
+      }
+    }
+  } catch (e) {
+    // Ignore individual strategy errors and proceed to next fallback
+  }
   return null;
 }
 
@@ -60,93 +86,50 @@ export async function fetchSubredditHotPosts(rawSubredditInput: string): Promise
     throw new Error('Please enter a valid subreddit name.');
   }
 
-  // Validate subreddit format (alphanumeric and underscores, 3-21 chars)
   if (!/^[a-zA-Z0-9_]{2,21}$/.test(subreddit)) {
     throw new Error(`"${subreddit}" is not a valid subreddit name format. Subreddit names should contain 2-21 alphanumeric characters.`);
   }
 
   let responseData: RawRedditListingResponse | null = null;
-  let fetchError: Error | null = null;
 
   // Strategy 1: OAuth authenticated request if credentials are present
   const oauthToken = await getOAuthToken();
   if (oauthToken) {
-    try {
-      const res = await axios.get<RawRedditListingResponse>(
-        `https://oauth.reddit.com/r/${subreddit}/hot`,
-        {
-          params: { limit: 50, raw_json: 1 },
-          headers: {
-            'Authorization': `Bearer ${oauthToken}`,
-            'User-Agent': 'web:subreddit-vibe-check:v1.0.0 (by /u/vibecheckapp)'
-          },
-          timeout: 10000
-        }
-      );
-      responseData = res.data;
-    } catch (err: any) {
-      fetchError = err;
-    }
+    responseData = await fetchJsonWithTimeout(
+      `https://oauth.reddit.com/r/${subreddit}/hot?limit=50&raw_json=1`,
+      { 'Authorization': `Bearer ${oauthToken}` }
+    );
   }
 
-  // Strategy 2: Direct public endpoint request
+  // Strategy 2: Direct public Reddit endpoint (No unsafe User-Agent header in browser)
   if (!responseData) {
-    try {
-      const res = await axios.get<RawRedditListingResponse>(
-        `https://www.reddit.com/r/${subreddit}/hot.json`,
-        {
-          params: { limit: 50, raw_json: 1 },
-          headers: {
-            'User-Agent': 'web:subreddit-vibe-check:v1.0.0 (by /u/vibecheckapp)'
-          },
-          timeout: 10000
-        }
-      );
-      responseData = res.data;
-    } catch (err: any) {
-      fetchError = err;
-    }
+    responseData = await fetchJsonWithTimeout(
+      `https://www.reddit.com/r/${subreddit}/hot.json?limit=50&raw_json=1`
+    );
   }
 
-  // Strategy 3: Vite Dev Proxy fallback if CORS/network blocked direct fetch
-  if (!responseData && import.meta.env.DEV) {
-    try {
-      const res = await axios.get<RawRedditListingResponse>(
-        `/api/reddit-proxy/r/${subreddit}/hot.json`,
-        {
-          params: { limit: 50, raw_json: 1 },
-          timeout: 10000
-        }
-      );
-      responseData = res.data;
-    } catch (err: any) {
-      fetchError = err;
-    }
+  // Strategy 3: Old Reddit endpoint
+  if (!responseData) {
+    responseData = await fetchJsonWithTimeout(
+      `https://old.reddit.com/r/${subreddit}/hot.json?limit=50&raw_json=1`
+    );
   }
 
-  // Handle detailed HTTP / Reddit API error responses
-  if (!responseData && fetchError) {
-    const errObj = fetchError as any;
-    if (errObj.response) {
-      const status = errObj.response.status;
-      if (status === 404) {
-        throw new Error(`Subreddit "r/${subreddit}" does not exist or was deleted.`);
-      } else if (status === 403) {
-        throw new Error(`Subreddit "r/${subreddit}" is private, banned, or restricted.`);
-      } else if (status === 429) {
-        throw new Error(`Reddit API rate limit exceeded. Please wait a few moments and try again.`);
-      } else {
-        throw new Error(`Reddit API error (${status}): Unable to fetch posts for r/${subreddit}.`);
-      }
-    } else if (errObj.request) {
-      throw new Error(`Network error: Unable to reach Reddit API. Please check your internet connection.`);
-    } else {
-      throw new Error(fetchError.message || `An unknown error occurred while fetching r/${subreddit}.`);
-    }
+  // Strategy 4: Proxy route (/api/reddit-proxy/...)
+  if (!responseData) {
+    responseData = await fetchJsonWithTimeout(
+      `/api/reddit-proxy/r/${subreddit}/hot.json?limit=50&raw_json=1`
+    );
+  }
+
+  // Strategy 5: Public CORS proxy fallback
+  if (!responseData) {
+    const targetUrl = encodeURIComponent(`https://www.reddit.com/r/${subreddit}/hot.json?limit=50&raw_json=1`);
+    responseData = await fetchJsonWithTimeout(`https://api.allorigins.win/raw?url=${targetUrl}`);
   }
 
   if (!responseData || !responseData.data || !Array.isArray(responseData.data.children)) {
-    throw new Error(`Invalid response received from Reddit API for r/${subreddit}.`);
+    throw new Error(`Unable to fetch posts for r/${subreddit}. Subreddit may not exist, be private, or Reddit API rate limit was reached.`);
   }
 
   const children = responseData.data.children;
@@ -158,7 +141,7 @@ export async function fetchSubredditHotPosts(rawSubredditInput: string): Promise
   // Transform and normalize raw Reddit API response into domain model
   const posts: RedditPost[] = children
     .filter(child => child && child.kind === 't3' && child.data && child.data.title)
-    .slice(0, 50) // Ensure max 50 posts
+    .slice(0, 50)
     .map(child => {
       const data = child.data;
       const title = data.title.trim();
