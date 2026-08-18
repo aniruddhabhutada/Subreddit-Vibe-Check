@@ -18,20 +18,28 @@ export function useRedditPosts() {
   const [filter, setFilter] = useState<FilterOption>('all');
   const [sortBy, setSortBy] = useState<SortOption>('score');
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
 
   // In-memory session cache for fast tab/search switching
   const [cache] = useState<Map<string, CacheEntry>>(() => new Map());
 
-  const searchSubreddit = useCallback(async (subredditInput: string, forceRefresh: boolean = false) => {
+  const searchSubreddit = useCallback(async (
+    subredditInput: string,
+    forceRefresh: boolean = false,
+    overrideDemoMode?: boolean
+  ) => {
     const cleanedSubreddit = normalizeSubredditName(subredditInput);
+    const useDemo = overrideDemoMode !== undefined ? overrideDemoMode : isDemoMode;
 
     if (!cleanedSubreddit) {
       setError('Please enter a subreddit name.');
       return;
     }
 
+    const cacheKey = `${cleanedSubreddit.toLowerCase()}_${useDemo ? 'demo' : 'live'}`;
+
     // Return cached result if available and fresh (< 5 mins) and not force refreshing
-    const cached = cache.get(cleanedSubreddit.toLowerCase());
+    const cached = cache.get(cacheKey);
     if (cached && !forceRefresh && (Date.now() - cached.timestamp < 5 * 60 * 1000)) {
       setCurrentSubreddit(cleanedSubreddit);
       setPosts(cached.posts);
@@ -44,11 +52,11 @@ export function useRedditPosts() {
     setError(null);
 
     try {
-      const fetchedPosts = await fetchSubredditHotPosts(cleanedSubreddit);
+      const fetchedPosts = await fetchSubredditHotPosts(cleanedSubreddit, useDemo);
       const summary = calculateSentimentSummary(fetchedPosts);
 
       const now = Date.now();
-      cache.set(cleanedSubreddit.toLowerCase(), {
+      cache.set(cacheKey, {
         posts: fetchedPosts,
         summary,
         timestamp: now
@@ -62,7 +70,15 @@ export function useRedditPosts() {
     } finally {
       setLoading(false);
     }
-  }, [cache]);
+  }, [cache, isDemoMode]);
+
+  const toggleDemoMode = useCallback((newDemoState?: boolean) => {
+    const nextState = newDemoState !== undefined ? newDemoState : !isDemoMode;
+    setIsDemoMode(nextState);
+    if (currentSubreddit) {
+      searchSubreddit(currentSubreddit, true, nextState);
+    }
+  }, [isDemoMode, currentSubreddit, searchSubreddit]);
 
   // Overall sentiment summary calculation
   const summary: SentimentSummary = useMemo(() => {
@@ -110,6 +126,8 @@ export function useRedditPosts() {
     sortBy,
     setSortBy,
     lastUpdated,
+    isDemoMode,
+    toggleDemoMode,
     searchSubreddit
   };
 }

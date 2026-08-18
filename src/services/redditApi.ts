@@ -1,6 +1,7 @@
 import { RedditPost } from '../types/reddit';
 import { analyzeTitleSentiment } from '../utils/sentiment';
 import { normalizeSubredditName } from '../utils/formatters';
+import { getDemoPostsForSubreddit } from '../utils/demoFixtures';
 
 interface ApiPostItem {
   id: string;
@@ -25,10 +26,13 @@ interface ApiResponsePayload {
 }
 
 /**
- * Fetches Hot posts for a given subreddit from the backend Netlify Serverless API endpoint
- * and calculates client-side sentiment analysis for every post title.
+ * Fetches Hot posts for a given subreddit either from the Live Netlify API Function
+ * or from explicit Demo Mode fixtures, then computes client-side sentiment analysis for every title.
  */
-export async function fetchSubredditHotPosts(rawSubredditInput: string): Promise<RedditPost[]> {
+export async function fetchSubredditHotPosts(
+  rawSubredditInput: string,
+  isDemoMode: boolean = false
+): Promise<RedditPost[]> {
   const subreddit = normalizeSubredditName(rawSubredditInput);
 
   if (!subreddit) {
@@ -39,7 +43,37 @@ export async function fetchSubredditHotPosts(rawSubredditInput: string): Promise
     throw new Error(`"${subreddit}" is not a valid subreddit name format. Subreddit names should contain 2-21 alphanumeric characters.`);
   }
 
-  // Primary API endpoint: Netlify Function
+  // --- DEMO MODE EXECUTION ---
+  if (isDemoMode) {
+    const rawDemoPosts = getDemoPostsForSubreddit(subreddit);
+    return rawDemoPosts.map((item) => {
+      const title = item.title.trim();
+      // 100% Client-Side Sentiment Analysis on title
+      const sentiment = analyzeTitleSentiment(title);
+
+      return {
+        id: item.id,
+        title,
+        author: item.author,
+        score: item.score,
+        comments: item.comments,
+        createdAt: item.createdAt,
+        subreddit: item.subreddit,
+        permalink: item.permalink,
+        url: item.url,
+        isNsfw: Boolean(item.isNsfw),
+        isSelf: Boolean(item.isSelf),
+        upvoteRatio: item.upvoteRatio,
+        sentimentScore: sentiment.score,
+        sentimentComparative: sentiment.comparative,
+        sentimentLabel: sentiment.label,
+        positiveWords: sentiment.positiveWords,
+        negativeWords: sentiment.negativeWords
+      };
+    });
+  }
+
+  // --- LIVE API MODE EXECUTION ---
   const apiUrl = `/.netlify/functions/reddit-hot?subreddit=${encodeURIComponent(subreddit)}`;
 
   let response: Response;
@@ -51,10 +85,9 @@ export async function fetchSubredditHotPosts(rawSubredditInput: string): Promise
       }
     });
   } catch (netErr) {
-    throw new Error('Network error: Unable to reach API server. Please check your internet connection.');
+    throw new Error('Network error: Unable to reach Netlify API function. Please check your internet connection.');
   }
 
-  // Handle specific status codes with human-friendly messages as requested
   if (!response.ok) {
     let errMessage = '';
     try {
@@ -63,7 +96,7 @@ export async function fetchSubredditHotPosts(rawSubredditInput: string): Promise
         errMessage = errData.error;
       }
     } catch (e) {
-      // Ignore JSON parse failure for error body
+      // Ignore JSON parse error
     }
 
     if (!errMessage) {
@@ -72,7 +105,7 @@ export async function fetchSubredditHotPosts(rawSubredditInput: string): Promise
           errMessage = `"${subreddit}" is an invalid subreddit name.`;
           break;
         case 401:
-          errMessage = 'Reddit authentication is not configured correctly.';
+          errMessage = 'Reddit API credentials are not configured yet. Please configure REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET in Netlify Environment Variables.';
           break;
         case 403:
           errMessage = 'Reddit denied the API request. Check API access and credentials.';
@@ -85,7 +118,7 @@ export async function fetchSubredditHotPosts(rawSubredditInput: string): Promise
           break;
         case 500:
         default:
-          errMessage = 'Reddit is temporarily unavailable. Please try again.';
+          errMessage = 'Reddit API is temporarily unavailable. Please try again.';
           break;
       }
     }

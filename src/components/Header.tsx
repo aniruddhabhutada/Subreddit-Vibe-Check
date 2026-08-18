@@ -1,10 +1,15 @@
 import React from 'react';
-import { Sparkles, Github, Radio, ShieldCheck } from 'lucide-react';
+import { Sparkles, Github, Radio, ShieldCheck, Database, Zap } from 'lucide-react';
 
-export const Header: React.FC = () => {
+interface HeaderProps {
+  isDemoMode: boolean;
+  onToggleDemoMode: () => void;
+}
+
+export const Header: React.FC<HeaderProps> = ({ isDemoMode, onToggleDemoMode }) => {
   return (
     <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col md:flex-row items-center justify-between gap-4">
         
         {/* Brand logo & Title */}
         <div className="flex items-center space-x-3 text-center md:text-left">
@@ -26,8 +31,35 @@ export const Header: React.FC = () => {
           </div>
         </div>
 
-        {/* Action badges & Links */}
-        <div className="flex items-center space-x-3 text-xs text-slate-400">
+        {/* Mode Toggle Switch & Action Links */}
+        <div className="flex items-center flex-wrap justify-center space-x-3 text-xs text-slate-400">
+          
+          {/* Mode Switch Toggle Button */}
+          <button
+            type="button"
+            onClick={onToggleDemoMode}
+            className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl border font-semibold transition-all duration-200 shadow-sm ${
+              isDemoMode
+                ? 'bg-purple-950/60 border-purple-500/50 text-purple-300 hover:bg-purple-900/60'
+                : 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300 hover:bg-emerald-900/60'
+            }`}
+            title="Toggle between Live API and Sample Demo Mode"
+          >
+            {isDemoMode ? (
+              <>
+                <Database className="w-3.5 h-3.5 text-purple-400" />
+                <span>Mode: DEMO DATA</span>
+                <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-[10px] text-purple-200">Switch to Live</span>
+              </>
+            ) : (
+              <>
+                <Zap className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                <span>Mode: LIVE REDDIT API</span>
+                <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-[10px] text-emerald-200">Switch to Demo</span>
+              </>
+            )}
+          </button>
+
           <div className="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-slate-800/80 border border-slate-700/60">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
             <span>100% Client-Side NLP</span>
@@ -43,6 +75,7 @@ export const Header: React.FC = () => {
             <Github className="w-4 h-4" />
             <span className="font-medium">GitHub Repository</span>
           </a>
+
         </div>
 
       </div>
