@@ -123,10 +123,10 @@ Ensure Node.js (v18+) is installed.
 
 ```bash
 # Clone repository
-git clone https://github.com/your-username/subreddit-vibe-check.git
+git clone https://github.com/aniruddhabhutada/Subreddit-Vibe-Check.git
 
 # Navigate into project directory
-cd subreddit-vibe-check
+cd Subreddit-Vibe-Check
 
 # Install dependencies
 npm install

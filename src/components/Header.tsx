@@ -34,7 +34,7 @@ export const Header: React.FC = () => {
           </div>
 
           <a
-            href="https://github.com"
+            href="https://github.com/aniruddhabhutada/Subreddit-Vibe-Check"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700/80 text-slate-200 hover:text-white transition-colors duration-200"
